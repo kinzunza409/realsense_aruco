@@ -1,17 +1,14 @@
 # ROS build artifacts
-catkin_ws/build/
-catkin_ws/devel/
-catkin_ws/logs/
-catkin_ws/.catkin_workspace
-
+ros_ws/build/
+ros_ws/devel/
+ros_ws/logs/
+ros_ws/.catkin_tools/
 # Python
 __pycache__/
 *.pyc
 *.pyo
-
 # VS Code
 .vscode/settings.json
-
 # OS
 .DS_Store
 Thumbs.db

@@ -6,14 +6,26 @@
     },
     "workspaceFolder": "/workspace",
     "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
-    "runArgs": ["--hostname", "ros-dev"],
+    "runArgs": [
+        "--hostname", "ros-dev",
+        "--device=/dev/video0:/dev/video0"
+    ],
     "customizations": {
         "vscode": {
             "extensions": [
                 "ms-vscode.cpptools",
                 "ms-python.python",
                 "ms-iot.vscode-ros"
-            ]
+            ],
+            "settings": {
+                "terminal.integrated.defaultProfile.linux": "bash",
+                "terminal.integrated.profiles.linux": {
+                    "bash": {
+                        "path": "bash",
+                        "args": ["--login"]
+                    }
+                }
+            }
         }
     }
 }
