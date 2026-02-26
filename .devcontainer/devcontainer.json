@@ -8,8 +8,15 @@
     "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
     "runArgs": [
         "--hostname", "ros-dev",
-        "--device=/dev/video0:/dev/video0"
+        "--device=/dev/video0:/dev/video0",
+        "--device=/dev/bus/usb:/dev/bus/usb",
+        "--volume=/tmp/.X11-unix:/tmp/.X11-unix:rw",
+        "--device=/dev/dri:/dev/dri"
     ],
+    "remoteEnv": {
+        "DISPLAY": "${localEnv:DISPLAY}",
+        "DISABLE_ROS1_EOL_WARNINGS": "1"
+    },
     "customizations": {
         "vscode": {
             "extensions": [
