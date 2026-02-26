@@ -8,6 +8,7 @@ import tf2_ros
 import tf2_msgs.msg
 import tf.transformations
 import geometry_msgs.msg
+import visualization_msgs.msg
 
 import cv2 as cv
 
@@ -110,9 +111,21 @@ def find_transform(p, q, id = None):
 
     return T
 
+# returns Marker object from Pose and ID
+def get_marker(pose, id):
+    m = visualization_msgs.msg.Marker()
+    m.pose = pose
+    m.id = id
+
+    return m
+
 def main():
     rospy.init_node('realsense_aruco_pose')
     rospy.loginfo("RealSense Aruco Pose Node Started")
+    marker_pub = rospy.Publisher(
+        '/aruco/marker_poses',
+        visualization_msgs.msg.MarkerArray,
+        queue_size=10)
     cvbridge = CvBridge()
 
     # get camera intrinsics
@@ -137,7 +150,10 @@ def main():
 
         # aruco detection
         # TODO: try this with the OpenCV 4.8 params to see if it performs better
+        start = rospy.Time.now()
         corners, ids, rejected = cv.aruco.detectMarkers(frame, aruco_dict, parameters=aruco_params)
+        elapsed_ms = (rospy.Time.now() - start).to_sec() * 1000
+        rospy.loginfo_throttle(30, f"Detection time: {elapsed_ms:.1f}ms")
         rvecs, tvecs, _objPoints = cv.aruco.estimatePoseSingleMarkers(corners, marker_length, camera_k, camera_d)
 
         
@@ -147,7 +163,7 @@ def main():
             # convert vectors to poses
             tag_poses = [cv_to_pose(r,t) for r,t in zip(rvecs, tvecs)]
 
-            rospy.loginfo_throttle(5.0, "\n".join([f"Found {len(ids)} markers"] + [f"Marker {id[0]}: ({pose.position.x*1000:.1f}mm, {pose.position.y*1000:.1f}mm, {pose.position.z*1000:.1f}mm)" for id, pose in zip(ids, tag_poses)]))
+            rospy.loginfo_throttle(30, "\n".join([f"Found {len(ids)} markers"] + [f"Marker {id[0]}: ({pose.position.x*1000:.1f}mm, {pose.position.y*1000:.1f}mm, {pose.position.z*1000:.1f}mm)" for id, pose in zip(ids, tag_poses)]))
             
             # check if origin ID found
             if origin_id in ids:
@@ -159,13 +175,14 @@ def main():
                 if transform_translation_distance(T_temp, T_ca) > 10:
                     # update transform
                     T_ca = T_temp
-                    rospy.logwarn(f"Origin Marker ID {origin_id} has moved")
+                    rospy.logwarn_throttle(10, f"Origin Marker ID {origin_id} has moved")
             else:
-                rospy.logwarn_throttle(5*60,f"Origin Marker ID {origin_id} is obscured")
+                rospy.logwarn_throttle(3*60,f"Origin Marker ID {origin_id} is obscured")
 
             #transform poses to robot base frame of reference
             tag_poses_transformed = [apply_transforms(p, [T_ca, T_ar]) for p in tag_poses]
-            
+            # publish poses
+            marker_pub.publish([get_marker(t, id) for t,id in zip(tag_poses_transformed, ids.flatten())])
 
             #cv.aruco.drawDetectedMarkers(frame, corners, ids)
             for r,t in zip(rvecs, tvecs):
@@ -174,10 +191,10 @@ def main():
                     id_222 = list(ids.flatten()).index(222)
                     id_333 = list(ids.flatten()).index(333)
                     pose_333 = tag_poses_transformed[id_333]
-                    x = pose_333.position.x
-                    y = pose_333.position.y
-                    z = pose_333.position.z
-                    cv.putText(frame, f"({x:.3f}, {y:.3f}, {z:.3f})", (50, 50), cv.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
+                    x = pose_333.position.x *1000
+                    y = pose_333.position.y *1000
+                    z = pose_333.position.z *1000
+                    cv.putText(frame, f"({x:.2f}, {y:.2f}, {z:.2f})", (50, 50), cv.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
 
                 #cv.putText(frame, f"({x:.3f}, {y:.3f}, {z:.3f})", (50, 50), cv.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
                 #cv.putText(frame, f"(DIST: {dist:.2f}mm)", (50, 100), cv.FONT_HERSHEY_SIMPLEX, 1.0, (255, 0, 0), 2)
