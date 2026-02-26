@@ -1,5 +1,5 @@
 <launch>
     <include file="$(find realsense2_camera)/launch/rs_camera.launch"/>
     
-    <node name="realsense_viewer_aruco" pkg="realsense_feed" type="realsense_viewer_aruco.py" output="screen"/>
+    <node name="realsense_aruco_pose" pkg="realsense_feed" type="aruco_pose.py" output="screen"/>
 </launch>
