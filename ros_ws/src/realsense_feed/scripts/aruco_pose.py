@@ -134,17 +134,20 @@ def main():
     camera_d = np.array(camera_info.D)  # distortion coefficients
 
     # aruco detection initializations
-    aruco_dict = cv.aruco.getPredefinedDictionary(cv.aruco.DICT_4X4_1000)
+    aruco_dict = cv.aruco.getPredefinedDictionary(cv.aruco.DICT_5X5_50)
     aruco_params = cv.aruco.DetectorParameters_create()
     marker_length = 0.04 # side length in meters
-    origin_id = 222 # aruco id for marking robot base
+    origin_id = 20 # aruco id for marking robot base
 
     # frame transforms
     T_ca = IDENTITY_TRANSFORM # tranform between camera and aruco
     T_ar = IDENTITY_TRANSFORM # transform between aruco and robot base
 
+    #flags
+    extrisnics_found = False
+
     def image_callback(msg):
-        nonlocal T_ca, T_ar
+        nonlocal T_ca, T_ar, extrisnics_found
         
         frame = cvbridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
 
@@ -163,33 +166,43 @@ def main():
             # convert vectors to poses
             tag_poses = [cv_to_pose(r,t) for r,t in zip(rvecs, tvecs)]
 
-            rospy.loginfo_throttle(30, "\n".join([f"Found {len(ids)} markers"] + [f"Marker {id[0]}: ({pose.position.x*1000:.1f}mm, {pose.position.y*1000:.1f}mm, {pose.position.z*1000:.1f}mm)" for id, pose in zip(ids, tag_poses)]))
+            rospy.loginfo_throttle(30, "\n".join([f"Found {len(ids)} markers (coordinate wrt camera frame)"] + [f"Marker {id[0]}: ({pose.position.x*1000:.1f}mm, {pose.position.y*1000:.1f}mm, {pose.position.z*1000:.1f}mm)" for id, pose in zip(ids, tag_poses)]))
             
             # check if origin ID found
             if origin_id in ids:
-                idx = list(ids.flatten()).index(222)
+                idx = list(ids.flatten()).index(origin_id)
                 origin_c = tag_poses[idx] # pose of tag wrt camera
                 T_temp = find_transform(origin_c.position, origin_c.orientation)
 
                 # check if origin aruco has moved
                 if transform_translation_distance(T_temp, T_ca) > 10:
+                    # if this is the first time the transform was found
+                    if not extrisnics_found:
+                        extrisnics_found = True
+                        rospy.loginfo(f"Origin Marker ID {origin_id} has been found")
+                    else:
+                        rospy.logwarn_throttle(10, f"Origin Marker ID {origin_id} or CAMERA has moved")
+
                     # update transform
                     T_ca = T_temp
-                    rospy.logwarn_throttle(10, f"Origin Marker ID {origin_id} has moved")
+                    
             else:
                 rospy.logwarn_throttle(3*60,f"Origin Marker ID {origin_id} is obscured")
 
             #transform poses to robot base frame of reference
             tag_poses_transformed = [apply_transforms(p, [T_ca, T_ar]) for p in tag_poses]
-            # publish poses
-            marker_pub.publish([get_marker(t, id) for t,id in zip(tag_poses_transformed, ids.flatten())])
+            # publish poses if the camera posiotion is known (otherwise the values will be innacurate)
+            if extrisnics_found: 
+                marker_pub.publish([get_marker(t, id) for t,id in zip(tag_poses_transformed, ids.flatten())])
+            else:
+                rospy.logerr_throttle(30, "Not publishing marker poses...origin marker may not be visible")
 
             #cv.aruco.drawDetectedMarkers(frame, corners, ids)
             for r,t in zip(rvecs, tvecs):
                 frame = cv.aruco.drawAxis(frame, camera_k, camera_d, r, t, marker_length)
                 if len(tag_poses) >= 2:
-                    id_222 = list(ids.flatten()).index(222)
-                    id_333 = list(ids.flatten()).index(333)
+                    id_222 = list(ids.flatten()).index(15)
+                    id_333 = list(ids.flatten()).index(20)
                     pose_333 = tag_poses_transformed[id_333]
                     x = pose_333.position.x *1000
                     y = pose_333.position.y *1000
