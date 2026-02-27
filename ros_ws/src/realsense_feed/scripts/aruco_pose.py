@@ -90,6 +90,42 @@ def transform_pose(pose, transform):
     result.orientation.w = q[3]
     return result
 
+def multiply_transforms(T1, T2):
+    # build 4x4 matrices
+    M1 = tf.transformations.quaternion_matrix([
+        T1.transform.rotation.x,
+        T1.transform.rotation.y,
+        T1.transform.rotation.z,
+        T1.transform.rotation.w
+    ])
+    M1[0][3] = T1.transform.translation.x
+    M1[1][3] = T1.transform.translation.y
+    M1[2][3] = T1.transform.translation.z
+
+    M2 = tf.transformations.quaternion_matrix([
+        T2.transform.rotation.x,
+        T2.transform.rotation.y,
+        T2.transform.rotation.z,
+        T2.transform.rotation.w
+    ])
+    M2[0][3] = T2.transform.translation.x
+    M2[1][3] = T2.transform.translation.y
+    M2[2][3] = T2.transform.translation.z
+
+    M = np.dot(M1, M2)
+
+    T = geometry_msgs.msg.TransformStamped()
+    T.header.stamp = rospy.Time.now()
+    q = tf.transformations.quaternion_from_matrix(M)
+    T.transform.translation.x = M[0][3]
+    T.transform.translation.y = M[1][3]
+    T.transform.translation.z = M[2][3]
+    T.transform.rotation.x = q[0]
+    T.transform.rotation.y = q[1]
+    T.transform.rotation.z = q[2]
+    T.transform.rotation.w = q[3]
+    return T
+
 def apply_transforms(p, transforms):
     result = p
     for transform in transforms:
@@ -134,14 +170,60 @@ def main():
     camera_d = np.array(camera_info.D)  # distortion coefficients
 
     # aruco detection initializations
-    aruco_dict = cv.aruco.getPredefinedDictionary(cv.aruco.DICT_5X5_50)
+    aruco_dict = cv.aruco.getPredefinedDictionary(cv.aruco.DICT_5X5_100)
     aruco_params = cv.aruco.DetectorParameters_create()
+
+    # improved defaults from newer OpenCV
+    aruco_params.adaptiveThreshWinSizeMin = 3
+    aruco_params.adaptiveThreshWinSizeMax = 23
+    aruco_params.adaptiveThreshWinSizeStep = 10
+    aruco_params.adaptiveThreshConstant = 7
+
+    aruco_params.minMarkerPerimeterRate = 0.03
+    aruco_params.maxMarkerPerimeterRate = 4.0
+    aruco_params.polygonalApproxAccuracyRate = 0.03
+    aruco_params.minCornerDistanceRate = 0.05
+    aruco_params.minDistanceToBorder = 3
+    aruco_params.minMarkerDistanceRate = 0.05
+
+    aruco_params.cornerRefinementMethod = 1  # CORNER_REFINE_SUBPIX — not default in 4.2 but is in newer
+    aruco_params.cornerRefinementWinSize = 5
+    aruco_params.cornerRefinementMaxIterations = 30
+    aruco_params.cornerRefinementMinAccuracy = 0.1
+
+    aruco_params.markerBorderBits = 1
+    aruco_params.perspectiveRemovePixelPerCell = 4
+    aruco_params.perspectiveRemoveIgnoredMarginPerCell = 0.13
+    aruco_params.maxErroneousBitsInBorderRate = 0.35
+    aruco_params.minOtsuStdDev = 5.0
+    aruco_params.errorCorrectionRate = 0.6
+    
+    
     marker_length = 0.04 # side length in meters
-    origin_id = 20 # aruco id for marking robot base
+    origin_id = 0 # aruco id for marking robot base
 
     # frame transforms
     T_ca = IDENTITY_TRANSFORM # tranform between camera and aruco
-    T_ar = IDENTITY_TRANSFORM # transform between aruco and robot base
+    T_ar_R = geometry_msgs.msg.TransformStamped()
+    T_ar_T = geometry_msgs.msg.TransformStamped()
+    #T_ar = geometry_msgs.msg.TransformStamped() # transform between aruco and robot base
+
+    
+
+    # rotation: 45 deg around y, then 90 deg around z to align tag x with robot y
+    R = tf.transformations.euler_matrix(np.deg2rad(90), 0, np.deg2rad(-45))
+    q = tf.transformations.quaternion_from_matrix(R)
+    T_ar_R.transform.rotation.x = q[0]
+    T_ar_R.transform.rotation.y = q[1]
+    T_ar_R.transform.rotation.z = q[2]
+    T_ar_R.transform.rotation.w = q[3]
+
+    # 40mm above robot in z
+    T_ar_T.transform.translation.x = 0.1524
+    T_ar_T.transform.translation.y = 0.1524
+    T_ar_T.transform.translation.z = -0.040  # 40mm in meters
+
+    T_ar = multiply_transforms(T_ar_R, T_ar_T)
 
     #flags
     extrisnics_found = False
@@ -154,7 +236,17 @@ def main():
         # aruco detection
         # TODO: try this with the OpenCV 4.8 params to see if it performs better
         start = rospy.Time.now()
-        corners, ids, rejected = cv.aruco.detectMarkers(frame, aruco_dict, parameters=aruco_params)
+
+        gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
+        clahe = cv.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        gray = clahe.apply(gray)
+        mask_height = int(gray.shape[0] * 0.3)
+        #gray[:mask_height, :] = 0
+        #frame = gray # for debugging
+        corners, ids, rejected = cv.aruco.detectMarkers(gray, aruco_dict, parameters=aruco_params)
+        #corners, ids, rejected = cv.aruco.refineDetectedMarkers(gray, aruco_dict, corners, ids, rejected, camera_k, camera_d)
+        num_rejected = len(rejected)
+        rospy.loginfo_throttle(5.0, f"Rejected candidates: {num_rejected}")
         elapsed_ms = (rospy.Time.now() - start).to_sec() * 1000
         rospy.loginfo_throttle(30, f"Detection time: {elapsed_ms:.1f}ms")
         rvecs, tvecs, _objPoints = cv.aruco.estimatePoseSingleMarkers(corners, marker_length, camera_k, camera_d)
@@ -200,14 +292,6 @@ def main():
             #cv.aruco.drawDetectedMarkers(frame, corners, ids)
             for r,t in zip(rvecs, tvecs):
                 frame = cv.aruco.drawAxis(frame, camera_k, camera_d, r, t, marker_length)
-                if len(tag_poses) >= 2:
-                    id_222 = list(ids.flatten()).index(15)
-                    id_333 = list(ids.flatten()).index(20)
-                    pose_333 = tag_poses_transformed[id_333]
-                    x = pose_333.position.x *1000
-                    y = pose_333.position.y *1000
-                    z = pose_333.position.z *1000
-                    cv.putText(frame, f"({x:.2f}, {y:.2f}, {z:.2f})", (50, 50), cv.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
 
                 #cv.putText(frame, f"({x:.3f}, {y:.3f}, {z:.3f})", (50, 50), cv.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
                 #cv.putText(frame, f"(DIST: {dist:.2f}mm)", (50, 100), cv.FONT_HERSHEY_SIMPLEX, 1.0, (255, 0, 0), 2)
