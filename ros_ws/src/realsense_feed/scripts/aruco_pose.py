@@ -199,8 +199,10 @@ def main():
     aruco_params.errorCorrectionRate = 0.6
     
     
-    marker_length = 0.04 # side length in meters
-    origin_id = 0 # aruco id for marking robot base
+    marker_length = 0.04 # side length of aruco marker in meters
+    origin_marker_length = 0.10
+    checkersquare_length = 0.0667 # meters
+    origin_id = 1 # aruco id for marking robot base
 
     # frame transforms
     T_ca = IDENTITY_TRANSFORM # tranform between camera and aruco
@@ -211,7 +213,7 @@ def main():
     
 
     # rotation: 45 deg around y, then 90 deg around z to align tag x with robot y
-    R = tf.transformations.euler_matrix(np.deg2rad(90), 0, np.deg2rad(-45))
+    R = tf.transformations.euler_matrix(0,0,0)
     q = tf.transformations.quaternion_from_matrix(R)
     T_ar_R.transform.rotation.x = q[0]
     T_ar_R.transform.rotation.y = q[1]
@@ -219,11 +221,12 @@ def main():
     T_ar_R.transform.rotation.w = q[3]
 
     # 40mm above robot in z
-    T_ar_T.transform.translation.x = 0.1524
-    T_ar_T.transform.translation.y = 0.1524
-    T_ar_T.transform.translation.z = -0.040  # 40mm in meters
+    T_ar_T.transform.translation.x = 0.34925/2 + 0.01 + origin_marker_length/2
+    T_ar_T.transform.translation.y = 0
+    T_ar_T.transform.translation.z = 0.012
 
-    T_ar = multiply_transforms(T_ar_R, T_ar_T)
+    #T_ar = multiply_transforms(T_ar_R, T_ar_T)
+    T_ar = IDENTITY_TRANSFORM
 
     #flags
     extrisnics_found = False
@@ -233,29 +236,34 @@ def main():
         
         frame = cvbridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
 
-        # aruco detection
         # TODO: try this with the OpenCV 4.8 params to see if it performs better
         start = rospy.Time.now()
 
+        # preproccesing
         gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
         clahe = cv.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
         gray = clahe.apply(gray)
         mask_height = int(gray.shape[0] * 0.3)
         #gray[:mask_height, :] = 0
         #frame = gray # for debugging
+
+        # find Arucos positions wrt image frame
         corners, ids, rejected = cv.aruco.detectMarkers(gray, aruco_dict, parameters=aruco_params)
         #corners, ids, rejected = cv.aruco.refineDetectedMarkers(gray, aruco_dict, corners, ids, rejected, camera_k, camera_d)
-        num_rejected = len(rejected)
-        rospy.loginfo_throttle(5.0, f"Rejected candidates: {num_rejected}")
+        
+        
+        #num_rejected = len(rejected)
+        #rospy.loginfo_throttle(5.0, f"Rejected candidates: {num_rejected}")
         elapsed_ms = (rospy.Time.now() - start).to_sec() * 1000
         rospy.loginfo_throttle(30, f"Detection time: {elapsed_ms:.1f}ms")
+        
+        # get aruco poses wrt camera pose
         rvecs, tvecs, _objPoints = cv.aruco.estimatePoseSingleMarkers(corners, marker_length, camera_k, camera_d)
 
         
-
         if ids is not None:
-            
-            # convert vectors to poses
+
+            # convert vectors to ROS poses
             tag_poses = [cv_to_pose(r,t) for r,t in zip(rvecs, tvecs)]
 
             rospy.loginfo_throttle(30, "\n".join([f"Found {len(ids)} markers (coordinate wrt camera frame)"] + [f"Marker {id[0]}: ({pose.position.x*1000:.1f}mm, {pose.position.y*1000:.1f}mm, {pose.position.z*1000:.1f}mm)" for id, pose in zip(ids, tag_poses)]))
@@ -263,8 +271,9 @@ def main():
             # check if origin ID found
             if origin_id in ids:
                 idx = list(ids.flatten()).index(origin_id)
-                origin_c = tag_poses[idx] # pose of tag wrt camera
-                T_temp = find_transform(origin_c.position, origin_c.orientation)
+                r_origin, t_origin, _objPoints = cv.aruco.estimatePoseSingleMarkers(corners[idx], origin_marker_length, camera_k, camera_d)
+                origin_pose = cv_to_pose(r_origin, t_origin) # pose of tag wrt camera
+                T_temp = find_transform(origin_pose.position, origin_pose.orientation)
 
                 # check if origin aruco has moved
                 if transform_translation_distance(T_temp, T_ca) > 10:
