@@ -9,11 +9,14 @@ import tf2_msgs.msg
 import tf.transformations
 import geometry_msgs.msg
 import visualization_msgs.msg
+import std_msgs.msg
 
 import cv2 as cv
 
 IDENTITY_TRANSFORM = geometry_msgs.msg.TransformStamped()
 IDENTITY_TRANSFORM.transform.rotation.w = 1.0
+
+RED = std_msgs.msg.ColorRGBA(r=1, g=0, b=0, a=1)
 
 class ArucoTag:
     _aruco_lengths = { # in meters
@@ -22,10 +25,11 @@ class ArucoTag:
         2 : 0.1
     }
 
-    def __init__(self, id, corners, pose = None):
+    def __init__(self, id, corners, pose = None, frame_id = "camera"):
         self.id = id
         self.corners = corners
         self.pose = pose if pose is not None else geometry_msgs.msg.Pose()
+        self.frame_id = frame_id
         self.length = self._aruco_lengths.get(id, self._aruco_lengths["default"])
 
     def pose_from_opencv(self, rvec, tvec):
@@ -56,8 +60,18 @@ class ArucoTag:
     def get_marker(self) -> visualization_msgs.msg.Marker:
         marker = visualization_msgs.msg.Marker()
 
+        marker.header.stamp = rospy.Time.now()
+        marker.header.frame_id = self.frame_id
+
         marker.pose = self.pose
         marker.id = self.id
+
+        # need this so that it displays in rviz
+        marker.color = RED
+        marker.type = visualization_msgs.msg.Marker.CUBE
+        marker.scale.x = self.length
+        marker.scale.y = self.length
+        marker.scale.z = self.length
 
         return marker
 
@@ -295,13 +309,7 @@ def main():
         corners, ids, rejected = cv.aruco.detectMarkers(gray, aruco_dict, parameters=aruco_params)
         #corners, ids, rejected = cv.aruco.refineDetectedMarkers(gray, aruco_dict, corners, ids, rejected, camera_k, camera_d)
 
-        # convert into a single list for easier sorting/searching
-        aruco_tags = [ArucoTag(id, c) for c,id in zip(corners, ids.flatten())]
 
-        # find poses of each tag
-        for a in aruco_tags:
-            rvecs, tvecs, _objPoints = cv.aruco.estimatePoseSingleMarkers(a.corners, a.length, camera_k, camera_d) # this needs to be done tag by tag because of different lengths
-            a.pose_from_opencv(rvecs, tvecs)
 
         # get aruco poses wrt camera pose
         #rvecs, tvecs, _objPoints = cv.aruco.estimatePoseSingleMarkers(corners, marker_length, camera_k, camera_d)
@@ -314,6 +322,15 @@ def main():
 
         
         if ids is not None:
+
+
+            # convert into a single list for easier sorting/searching
+            aruco_tags = [ArucoTag(id, c) for c,id in zip(corners, ids.flatten())]
+
+            # find poses of each tag
+            for a in aruco_tags:
+                rvecs, tvecs, _objPoints = cv.aruco.estimatePoseSingleMarkers(a.corners, a.length, camera_k, camera_d) # this needs to be done tag by tag because of different lengths
+                a.pose_from_opencv(rvecs, tvecs)
 
             # convert vectors to ROS poses
             #tag_poses = [cv_to_pose(r,t) for r,t in zip(rvecs, tvecs)]
