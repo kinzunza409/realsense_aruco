@@ -25,7 +25,7 @@ class ArucoTag:
         2 : 0.1
     }
 
-    def __init__(self, id, corners, pose = None, frame_id = "camera"):
+    def __init__(self, id, corners, pose = None, frame_id = "camera_color_optical_frame"):
         self.id = id
         self.corners = corners
         self.pose = pose if pose is not None else geometry_msgs.msg.Pose()

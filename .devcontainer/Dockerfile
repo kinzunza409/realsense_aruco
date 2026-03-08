@@ -1,11 +1,12 @@
 FROM osrf/ros:noetic-desktop-full
 
 RUN apt-get update && apt-get install -y \
-    python3-opencv \
+    ros-noetic-tf2-tools \
     ros-noetic-cv-bridge \
     ros-noetic-image-transport \
     ros-noetic-realsense2-camera \
     ros-noetic-realsense2-description \
+    python3-opencv \
     python3-catkin-tools \
     python3-pip \
     mesa-utils \
