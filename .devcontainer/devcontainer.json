@@ -4,19 +4,36 @@
         "dockerfile": "Dockerfile",
         "context": ".."
     },
+
     "initializeCommand": "xhost +local:docker",
+
     "workspaceFolder": "/workspace",
     "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+
     "runArgs": [
         "--hostname", "ros-dev",
+
+        // USB devices (RealSense camera)
         "--device=/dev/bus/usb:/dev/bus/usb",
+
+        // X11 socket for display forwarding
         "--volume=/tmp/.X11-unix:/tmp/.X11-unix:rw",
-        "--device=/dev/dri:/dev/dri"
+
+        // NVIDIA: replaces --device=/dev/dri — exposes all GPUs
+        "--gpus=all",
+
+        // Required for NVIDIA + X11 display forwarding to work together
+        "--env=NVIDIA_DRIVER_CAPABILITIES=all",
+
+        // Qt MIT shared memory fix (same reason as before)
+        "--env=QT_X11_NO_MITSHM=1"
     ],
+
     "remoteEnv": {
         "DISPLAY": "${localEnv:DISPLAY}",
         "DISABLE_ROS1_EOL_WARNINGS": "1"
     },
+
     "customizations": {
         "vscode": {
             "extensions": [
@@ -25,7 +42,7 @@
                 "Ranch-Hand-Robotics.rde-ros-1"
             ],
             "settings": {
-                "terminal.integrated.lineHeight": 1.4, 
+                "terminal.integrated.lineHeight": 1.4,
                 "terminal.integrated.defaultProfile.linux": "bash",
                 "terminal.integrated.profiles.linux": {
                     "bash": {
