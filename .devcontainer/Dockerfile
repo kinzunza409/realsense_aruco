@@ -9,8 +9,14 @@ RUN apt-get update && apt-get install -y \
     python3-opencv \
     python3-catkin-tools \
     python3-pip \
+    tmux \
+    less \
+    tree \
     mesa-utils \
     && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m pip install \ 
+    mediapipe==0.10.9
 
 RUN sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' /root/.bashrc
 

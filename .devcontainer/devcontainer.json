@@ -26,7 +26,11 @@
         "--env=NVIDIA_DRIVER_CAPABILITIES=all",
 
         // Qt MIT shared memory fix (same reason as before)
-        "--env=QT_X11_NO_MITSHM=1"
+        "--env=QT_X11_NO_MITSHM=1",
+
+        // Cameras (webcam)
+        "--device=/dev/video0:/dev/video0",
+        "--device=/dev/video1:/dev/video1"
     ],
 
     "remoteEnv": {
