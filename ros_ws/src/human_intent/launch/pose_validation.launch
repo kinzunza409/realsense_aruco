@@ -10,6 +10,7 @@
         <param name="pose_detection_th" value="0.5"/>
         <param name="alpha"             value="0.8"/>
         <param name="viewer_enabled"    value="true"/>
+        <param name="viz_show_values"   value="true"/>
         <env name="DISPLAY" value="$(env DISPLAY)"/>
     </node>
 

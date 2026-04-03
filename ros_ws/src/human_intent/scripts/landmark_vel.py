@@ -129,12 +129,27 @@ class UpperPoseFinder:
         y = z * (v - cy) / fy
         return np.array([x, y, z])
 
-    def draw_pose(self, frame: np.ndarray, pose: UpperPoseResult) -> None:
+    def draw_pose(self, frame: np.ndarray, pose: UpperPoseResult,
+                  right_state: Optional['WristState'] = None, show_values: bool = False) -> None:
         mp.solutions.drawing_utils.draw_landmarks(
             frame, self._last_landmarks, mp.solutions.pose.POSE_CONNECTIONS
         )
         for px in [pose.left_wrist_px, pose.right_wrist_px]:
             cv.circle(frame, px, 8, (0, 255, 0), -1)
+
+        if show_values and right_state is not None and not np.isnan(pose.right_wrist).any():
+            p = pose.right_wrist
+            v = right_state.vel
+            mag = np.linalg.norm(v) if not np.isnan(v).any() else float('nan')
+            lines = [
+                f"R wrist pos  x:{p[0]:.3f} y:{p[1]:.3f} z:{p[2]:.3f} m",
+                f"R wrist vel  x:{v[0]:.3f} y:{v[1]:.3f} z:{v[2]:.3f} m/s",
+                f"R wrist |v|  {mag:.3f} m/s",
+            ]
+            y = 30
+            for line in lines:
+                cv.putText(frame, line, (10, y), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2, cv.LINE_AA)
+                y += 28
 
     @staticmethod
     def _extract_landmarks(raw_landmarks, frame_w: int, frame_h: int) -> Dict[str, Landmark2D]:
@@ -163,6 +178,10 @@ class UpperPoseFinder:
         }
 
 
+def is_valid(state: WristState) -> bool:
+    return not np.isnan(state.pos).any()
+
+
 def velocity_filtered(p1: np.ndarray, p2: np.ndarray, v1: np.ndarray, dt: float, alpha: float) -> np.ndarray:
     v  = (p2 - p1) / dt  # caclulate raw velocity
     v2 = alpha * v + (1 - alpha) * v1  # apply EMA low pass filter with last velocity
@@ -178,6 +197,7 @@ def main():
     pose_detection_th = rospy.get_param('~pose_detection_th', _DEFAULT_POSE_DETECTION_THRESHOLD)
     alpha             = rospy.get_param('~alpha', _DEFAULT_ALPHA)
     viewer_enabled    = rospy.get_param('~viewer_enabled', False)
+    viz_show_values   = rospy.get_param('~viz_show_values', False)
 
     camera_info = rospy.wait_for_message('/camera/color/camera_info', CameraInfo)
     camera_k    = np.array(camera_info.K).reshape(3, 3)
@@ -187,7 +207,8 @@ def main():
     tf_buffer   = tf2_ros.Buffer()
     tf_listener = tf2_ros.TransformListener(tf_buffer)
 
-    wrist_vel_pub = rospy.Publisher('/human_intent/wrist_velocity', PointStamped, queue_size=10)
+    wrist_pos_pub = rospy.Publisher('/human_intent/right_wrist/position', PointStamped, queue_size=10)
+    wrist_vel_pub = rospy.Publisher('/human_intent/right_wrist/velocity', PointStamped, queue_size=10)
     viz_pub       = rospy.Publisher('/human_intent/visualization', Image, queue_size=1)
 
     prev_time:   Optional[rospy.Time] = None
@@ -197,7 +218,7 @@ def main():
     def callback(rgb_msg: Image, depth_msg: Image) -> None:
         nonlocal prev_time, left_state, right_state
 
-        rospy.loginfo_throttle(1, "Callback firing")
+        #rospy.loginfo_throttle(1, "Callback firing")
 
         frame       = cvbridge.imgmsg_to_cv2(rgb_msg, desired_encoding='bgr8')
         frame_depth = cvbridge.imgmsg_to_cv2(depth_msg, desired_encoding='passthrough')
@@ -219,30 +240,49 @@ def main():
             return
 
         # right wrist velocity
-        if right_state is not None and not np.isnan(pose.right_wrist).any():
-            right_state = WristState(
-                pos      = pose.right_wrist,
-                prev_pos = right_state.pos,
-                vel      = velocity_filtered(right_state.pos, pose.right_wrist, right_state.vel, dt, alpha),
-                prev_vel = right_state.vel,
-            )
-        else:
-            right_state = WristState.nan()
+        if not np.isnan(pose.right_wrist).any():
+            if right_state is not None and is_valid(right_state):
+                right_state = WristState(
+                    pos      = pose.right_wrist,
+                    prev_pos = right_state.pos,
+                    vel      = velocity_filtered(right_state.pos, pose.right_wrist, right_state.vel, dt, alpha),
+                    prev_vel = right_state.vel,
+                )
+            else:
+                right_state = WristState(pos=pose.right_wrist, prev_pos=pose.right_wrist, vel=np.zeros(3), prev_vel=np.zeros(3))
+
+            if is_valid(right_state):
+                pos_msg = PointStamped()
+                pos_msg.header.stamp    = current_time
+                pos_msg.header.frame_id = 'camera_color_optical_frame'
+                pos_msg.point.x = right_state.pos[0]
+                pos_msg.point.y = right_state.pos[1]
+                pos_msg.point.z = right_state.pos[2]
+                wrist_pos_pub.publish(pos_msg)
+
+                vel_msg = PointStamped()
+                vel_msg.header.stamp    = current_time
+                vel_msg.header.frame_id = 'camera_color_optical_frame'
+                vel_msg.point.x = right_state.vel[0]
+                vel_msg.point.y = right_state.vel[1]
+                vel_msg.point.z = right_state.vel[2]
+                wrist_vel_pub.publish(vel_msg)
 
         # left wrist velocity
-        if left_state is not None and not np.isnan(pose.left_wrist).any():
-            left_state = WristState(
-                pos      = pose.left_wrist,
-                prev_pos = left_state.pos,
-                vel      = velocity_filtered(left_state.pos, pose.left_wrist, left_state.vel, dt, alpha),
-                prev_vel = left_state.vel,
-            )
-        else:
-            left_state = WristState.nan()
+        if not np.isnan(pose.left_wrist).any():
+            if left_state is not None and is_valid(left_state):
+                left_state = WristState(
+                    pos      = pose.left_wrist,
+                    prev_pos = left_state.pos,
+                    vel      = velocity_filtered(left_state.pos, pose.left_wrist, left_state.vel, dt, alpha),
+                    prev_vel = left_state.vel,
+                )
+            else:
+                left_state = WristState(pos=pose.left_wrist, prev_pos=pose.left_wrist, vel=np.zeros(3), prev_vel=np.zeros(3))
 
         # TODO: Make visualizer to check if velocity is correct
         if viewer_enabled:
-            pose_finder.draw_pose(frame, pose)
+            pose_finder.draw_pose(frame, pose, right_state, viz_show_values)
             viz_pub.publish(cvbridge.cv2_to_imgmsg(frame, encoding='bgr8'))
 
     rgb_sub   = Subscriber('/camera/color/image_raw', Image)
