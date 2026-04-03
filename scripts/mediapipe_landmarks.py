@@ -6,6 +6,7 @@ import math
 import sys
 import time
 from pathlib import Path
+from typing import Dict, Tuple, Optional
 
 import cv2
 import mediapipe as mp
@@ -22,7 +23,7 @@ UPPER_LIMB_IDS = {
     LM.RIGHT_ELBOW,
     LM.LEFT_WRIST,
     LM.RIGHT_WRIST,
-    LM.LEFT_PINKY,
+    LM.LEFT_PINKY
     LM.RIGHT_PINKY,
     LM.LEFT_INDEX,
     LM.RIGHT_INDEX,
@@ -78,7 +79,7 @@ def angle_between(a: np.ndarray, vertex: np.ndarray, b: np.ndarray) -> float:
     return math.degrees(math.acos(cos_t))
 
 
-def lm_to_px(lm_obj, w: int, h: int):
+def lm_to_px(lm_obj, w: int, h: int) -> Tuple[int, int]:
     """Normalised landmark -> pixel (x, y)."""
     return int(lm_obj.x * w), int(lm_obj.y * h)
 
@@ -88,7 +89,7 @@ def lm_to_2d(lm_obj) -> np.ndarray:
     return np.array([lm_obj.x, lm_obj.y], dtype=np.float32)
 
 
-def draw_skeleton(frame, landmarks, w: int, h: int):
+def draw_skeleton(frame: np.ndarray, landmarks, w: int, h: int) -> None:
     lm_list = landmarks.landmark
 
     for (id_a, id_b) in UPPER_LIMB_CONNECTIONS:
@@ -106,7 +107,7 @@ def draw_skeleton(frame, landmarks, w: int, h: int):
         cv2.circle(frame, px, 6, (0, 0, 0), 1, cv2.LINE_AA)  # outline
 
 
-def draw_angle_labels(frame, landmarks, angles: dict, w: int, h: int):
+def draw_angle_labels(frame: np.ndarray, landmarks, angles: Dict[str, float], w: int, h: int) -> None:
     """Draw each angle value next to its vertex landmark in the frame."""
     lm_list = landmarks.landmark
     for (name, _id_a, id_vertex, _id_b) in JOINT_ANGLE_DEFS:
@@ -125,7 +126,7 @@ def draw_angle_labels(frame, landmarks, angles: dict, w: int, h: int):
                     cv2.FONT_HERSHEY_SIMPLEX, 0.42, COL_TEXT_FG, 1, cv2.LINE_AA)
 
 
-def draw_angle_panel(frame, angles: dict):
+def draw_angle_panel(frame: np.ndarray, angles: Dict[str, float]) -> None:
     """Top-left corner summary panel."""
     x, y = 10, 22
     for name, val in angles.items():
@@ -135,14 +136,14 @@ def draw_angle_panel(frame, angles: dict):
         y += 20
 
 
-def draw_hud(frame, fps: float, paused: bool, h: int):
+def draw_hud(frame: np.ndarray, fps: float, paused: bool, h: int) -> None:
     status = "PAUSED" if paused else f"FPS {fps:.1f}"
     cv2.putText(frame, status, (10, h - 10),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.52, (80, 255, 80), 1, cv2.LINE_AA)
 
 _first_log = True
 
-def log_angles_terminal(angles: dict, frame_idx: int):
+def log_angles_terminal(angles: Dict[str, float], frame_idx: int) -> None:
     """Overwrite the same terminal lines each frame for a clean readout."""
     global _first_log
     lines = [f"  Frame {frame_idx:>7d}"]
@@ -158,7 +159,7 @@ def log_angles_terminal(angles: dict, frame_idx: int):
     _first_log = False
 
 
-def compute_angles(landmarks) -> dict:
+def compute_angles(landmarks) -> Dict[str, float]:
     lm_list = landmarks.landmark
     angles = {}
     for (name, id_a, id_v, id_b) in JOINT_ANGLE_DEFS:
@@ -173,7 +174,7 @@ def compute_angles(landmarks) -> dict:
     return angles
 
 
-def run(source):
+def run(source) -> None:
     cap = cv2.VideoCapture(source)
     if not cap.isOpened():
         sys.exit(f"[ERROR] Cannot open source: {source!r}")

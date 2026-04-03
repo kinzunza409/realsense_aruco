@@ -1,0 +1,18 @@
+Panels:
+  - Class: rviz/Displays
+    Name: Displays
+  - Class: rviz/Views
+    Name: Views
+Visualization Manager:
+  Displays:
+    - Class: rviz/Image
+      Enabled: true
+      Name: Human Intent Visualization
+      Topic: /human_intent/visualization
+      Queue Size: 2
+  Global Options:
+    Fixed Frame: camera_color_optical_frame
+  Name: root
+Window Geometry:
+  Width: 1280
+  Height: 720

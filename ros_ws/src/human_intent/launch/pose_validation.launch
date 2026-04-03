@@ -1,0 +1,18 @@
+<launch>
+
+    <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+        <arg name="align_depth"  value="true"/>
+        <arg name="color_fps" value="15"/>
+        <arg name="depth_fps" value="15"/>
+    </include>
+
+    <node name="human_intent_node" pkg="human_intent" type="landmark_vel.py" output="screen">
+        <param name="pose_detection_th" value="0.5"/>
+        <param name="alpha"             value="0.8"/>
+        <param name="viewer_enabled"    value="true"/>
+        <env name="DISPLAY" value="$(env DISPLAY)"/>
+    </node>
+
+    <node name="image_viewer" pkg="rqt_image_view" type="rqt_image_view" args="/human_intent/visualization"/>
+
+</launch>
