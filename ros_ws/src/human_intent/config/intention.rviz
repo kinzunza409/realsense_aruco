@@ -1,0 +1,28 @@
+Panels:
+  - Class: rviz/Displays
+    Name: Displays
+    Width: 300
+  - Class: rviz/Views
+    Name: Views
+Visualization Manager:
+  Displays:
+    - Class: rviz/Image
+      Enabled: true
+      Name: Pose Estimation
+      Topic: /human_intent/visualization
+      Queue Size: 2
+      Median window: 5
+      Value: true
+    - Class: rviz/Image
+      Enabled: true
+      Name: ArUco Detection
+      Topic: /aruco/visualization
+      Queue Size: 2
+      Median window: 5
+      Value: true
+  Global Options:
+    Fixed Frame: camera_color_optical_frame
+  Name: root
+Window Geometry:
+  Width: 1280
+  Height: 720

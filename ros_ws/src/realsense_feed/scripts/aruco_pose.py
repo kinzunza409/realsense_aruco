@@ -80,12 +80,13 @@ def main():
 
     rospy.init_node('realsense_aruco_pose')
     rospy.loginfo("RealSense Aruco Pose Node Started")
-    marker_pub = rospy.Publisher(
-        '/aruco/marker_poses',
-        visualization_msgs.msg.MarkerArray,
-        queue_size=10)
-    cvbridge = CvBridge()
-    origin_id = rospy.get_param('~origin_id', default=1)
+
+    marker_pub  = rospy.Publisher('/aruco/marker_poses', visualization_msgs.msg.MarkerArray, queue_size=10)
+    viz_pub     = rospy.Publisher('/aruco/visualization', Image, queue_size=1)
+
+    cvbridge      = CvBridge()
+    origin_id     = rospy.get_param('~origin_id', default=1)
+    viewer_enabled = rospy.get_param('~viewer_enabled', False)
 
     # get camera intrinsics
     camera_info = rospy.wait_for_message('/camera/color/camera_info', CameraInfo)
@@ -94,7 +95,8 @@ def main():
 
     # aruco detection initializations
     aruco_dict = cv.aruco.getPredefinedDictionary(cv.aruco.DICT_5X5_100)
-    aruco_params = cv.aruco.DetectorParameters_create()
+    aruco_params = cv.aruco.DetectorParameters()
+    aruco_detector = cv.aruco.ArucoDetector(aruco_dict, aruco_params)
 
     # improved defaults from newer OpenCV
     aruco_params.adaptiveThreshWinSizeMin = 3
@@ -121,7 +123,6 @@ def main():
     aruco_params.minOtsuStdDev = 5.0
     aruco_params.errorCorrectionRate = 0.6
     
-    
     marker_length = 0.04 # side length of aruco marker in meters
     origin_marker_length = 0.10
     checkersquare_length = 0.0667 # meters
@@ -139,13 +140,11 @@ def main():
         gray = clahe.apply(gray)
 
         # find Arucos positions wrt image frame
-        corners, ids, rejected = cv.aruco.detectMarkers(gray, aruco_dict, parameters=aruco_params)
-        #corners, ids, rejected = cv.aruco.refineDetectedMarkers(gray, aruco_dict, corners, ids, rejected, camera_k, camera_d)
+        corners, ids, rejected = aruco_detector.detectMarkers(gray)
 
         elapsed_ms = (rospy.Time.now() - start).to_sec() * 1000
         rospy.loginfo_throttle(30, f"Detection time: {elapsed_ms:.1f}ms")
 
-        
         if ids is not None:
 
             # convert into a single list for easier sorting/searching
@@ -156,28 +155,19 @@ def main():
                 rvecs, tvecs, _objPoints = cv.aruco.estimatePoseSingleMarkers(a.corners, a.length, camera_k, camera_d) # this needs to be done tag by tag because of different lengths
                 a.pose_from_opencv(rvecs, tvecs)
 
-            # convert vectors to ROS poses
-            #tag_poses = [cv_to_pose(r,t) for r,t in zip(rvecs, tvecs)]
-
-            #rospy.loginfo_throttle(30, "\n".join([f"Found {len(ids)} markers (coordinate wrt camera frame)"] + [f"Marker {id[0]}: ({pose.position.x*1000:.1f}mm, {pose.position.y*1000:.1f}mm, {pose.position.z*1000:.1f}mm)" for id, pose in zip(ids, tag_poses)]))
-
-
-            # draw marker axes on frame
-            for a in aruco_tags:
-                frame = cv.aruco.drawAxis(frame, camera_k, camera_d, a.rvec, a.tvec, a.length)
+            if viewer_enabled:
+                for a in aruco_tags:
+                    frame = cv.drawFrameAxes(frame, camera_k, camera_d, a.rvec, a.tvec, a.length)
 
             # publish all found tags as a MarkerArray
             marker_pub.publish([a.get_marker() for a in aruco_tags])
 
-
         else:
-            cv.putText(frame, 'NO MARKERS DETECTED!', (50, 50), cv.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
+            if viewer_enabled:
+                cv.putText(frame, 'NO MARKERS DETECTED!', (50, 50), cv.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
 
-        # TODO: make this a publisher instead so it can be seen in RVIZ
-        cv.imshow("RealSense Feed", frame)
-        if cv.waitKey(1) & 0xFF == ord('q'):
-            cv.destroyAllWindows()
-            rospy.signal_shutdown("User quit")
+        if viewer_enabled:
+            viz_pub.publish(cvbridge.cv2_to_imgmsg(frame, encoding='bgr8'))
 
     rospy.Subscriber('/camera/color/image_raw', Image, image_callback)
     rospy.spin()
