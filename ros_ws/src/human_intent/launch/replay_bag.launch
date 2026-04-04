@@ -1,0 +1,25 @@
+<launch>
+
+    <node name="rosbag_play" pkg="rosbag" type="play"
+          args="$(find human_intent)/../../../bags/realsense_session.bag --loop"
+          output="screen"/>
+
+    <node name="human_intent_node" pkg="human_intent" type="landmark_vel.py" output="screen">
+        <param name="pose_detection_th" value="0.5"/>
+        <param name="alpha"             value="0.3"/>
+        <param name="viewer_enabled"    value="true"/>
+        <param name="viz_show_values"   value="true"/>
+        <env name="DISPLAY" value="$(env DISPLAY)"/>
+    </node>
+
+    <node name="aruco_pose_node" pkg="realsense_feed" type="aruco_pose.py" output="screen">
+        <param name="viewer_enabled" value="true"/>
+        <env name="DISPLAY" value="$(env DISPLAY)"/>
+    </node>
+
+    <node name="intent_estimation_node" pkg="human_intent" type="intent_estimation.py" output="screen"/>
+
+    <node name="viewer_pose"  pkg="rqt_image_view" type="rqt_image_view" args="/human_intent/visualization"/>
+    <node name="viewer_aruco" pkg="rqt_image_view" type="rqt_image_view" args="/aruco/visualization"/>
+
+</launch>
